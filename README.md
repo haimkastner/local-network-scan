@@ -2,7 +2,7 @@
 
 A lightweight library to quickly scan local network.
 
-[![CI CD Status](https://github.com/haimkastner/local-network-scan/workflows/local-network-scan/badge.svg?branch=main)](https://github.com/haimkastner/local-network-scan/actions)
+[![local-network-scan](https://github.com/haimkastner/local-network-scan/actions/workflows/nodejs.yml/badge.svg)](https://github.com/haimkastner/local-network-scan/actions/workflows/nodejs.yml)
 
 
 > The library uses `arp` tool, in case of Linux machine, make sur it's installed on run-time (or install it by `apt-get install net-tools`).
