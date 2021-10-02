@@ -1,0 +1,46 @@
+{
+  "name": "local-network-scan",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "prepublish": "npm run format && npm run build",
+    "build": "tsc",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "directories": {
+    "lib": "dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/haimkastner/local-network-scan.git"
+  },
+  "homepage": "https://github.com/haimkastner/local-network-scan",
+  "author": "Haim Kastner",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/ip": "^1.1.0",
+    "@types/node": "^12.12.62",
+    "@types/ping": "^0.2.1",
+    "prettier": "^1.19.1",
+    "typescript": "^4.4.3"
+  },
+  "dependencies": {
+    "ip": "^1.1.5",
+    "node-arp": "^1.0.6",
+    "node-fetch": "^3.0.0",
+    "ping": "^0.4.1"
+  },
+  "keywords": [
+    "network",
+    "scan",
+    "local-network",
+    "local-network-scan",
+    "ip",
+    "mac"
+  ]
+}
