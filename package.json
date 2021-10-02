@@ -1,8 +1,7 @@
 {
   "name": "local-network-scan",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
-  "type": "module",
   "scripts": {
     "prepublish": "npm run format && npm run build",
     "build": "tsc",
@@ -30,9 +29,9 @@
     "typescript": "^4.4.3"
   },
   "dependencies": {
+    "axios": "^0.22.0",
     "ip": "^1.1.5",
     "node-arp": "^1.0.6",
-    "node-fetch": "^3.0.0",
     "ping": "^0.4.1"
   },
   "keywords": [

@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import axios from 'axios';
 import ip from 'ip';
 import nodeArp from 'node-arp';
 import ping from 'ping';
@@ -75,8 +75,8 @@ function getNetworkAddress(localNetwork?: string): string {
  */
 async function getVendor(mac: string): Promise<string> {
   try {
-    const vendorRes = await fetch(`http://macvendors.co/api/${mac}/json`);
-    const vendorBody = (await vendorRes.json()) as any;
+    const vendorRes = await axios(`http://macvendors.co/api/${mac}/json`);
+    const vendorBody = vendorRes.data as any;
     return vendorBody?.result?.company || '';
   } catch (error) {
     return '';
@@ -106,8 +106,8 @@ async function pingDevice(ip: string, options: ScanOptions): Promise<NetworkDevi
       vendor = await getVendor(rawMac);
     }
 
-    // Convert mac from '11:aa:22:bb:33:cc' to '11aa22bb33cc'
-    const mac = rawMac.split(':').join('');
+    // Convert mac from any convention (suc as '11:aa:22:bb:33:cc') to '11aa22bb33cc'
+    const mac = rawMac.replace(/:|-|_| /g, '').toLowerCase();
 
     return {
       ip,
