@@ -1,46 +1,12 @@
 import axios from 'axios';
 import ip from 'ip';
-import nodeArp from 'node-arp';
 import ping from 'ping';
+import { timeout } from 'promise-timeout';
+import { getNetworkTableMap } from './arp';
+import { NetworkDevice, ScanOptions } from './models';
 
-/**
- * A device in the network
- */
-export interface NetworkDevice {
-  /** Device's IP */
-  ip: string;
-  /** Device's MAC address */
-  mac: string;
-  /** Device's vendor name */
-  vendor?: string;
-}
-
-/**
- * Scan local network options
- */
-export interface ScanOptions {
-  /** The local network to scan, should look like xxx.xxx.xxx (default it's machine first IP network) */
-  localNetwork?: string;
-  /** Detect devices vendor from https://macvendors.com/ API (default false) */
-  queryVendor?: boolean;
-}
-
-/**
- * Convert nodeArp callback driven API to promise function
- * @param ip The IP to query
- * @returns The IP's mac address
- */
-async function getMac(ip: string): Promise<string> {
-  return new Promise<string>((res, rej) => {
-    nodeArp.getMAC(ip, (err: any, mac: string) => {
-      if (err) {
-        rej(err);
-        return;
-      }
-      res(mac);
-    });
-  });
-}
+/** Keep mac vendors results in cache */
+const vendorsCache = new Map<string, string>();
 
 /**
  * Detect local network to scan
@@ -61,7 +27,7 @@ function getNetworkAddress(localNetwork?: string): string {
   const machineIp = ip.address();
   const machineIpParts = machineIp.split('.');
   if (machineIpParts.length !== 4) {
-    throw new Error("MAchine don't own IP address, have to pass localNetwork option");
+    throw new Error("Machine don't own IP address, have to pass localNetwork option");
   }
 
   // Get network only address
@@ -75,10 +41,19 @@ function getNetworkAddress(localNetwork?: string): string {
  */
 async function getVendor(mac: string): Promise<string> {
   try {
+    if (vendorsCache.has(mac)) {
+      console.debug(`[local-network-scan] found mac ${mac} hit in cache`);
+      return vendorsCache.get(mac) || '';
+    }
+    console.debug(`[local-network-scan] Feting mac ${mac} vendor...`);
     const vendorRes = await axios(`http://macvendors.co/api/${mac}/json`);
     const vendorBody = vendorRes.data as any;
-    return vendorBody?.result?.company || '';
+    const vendor = vendorBody?.result?.company || '';
+    vendorsCache.set(mac, vendor);
+    console.debug(`[local-network-scan] Feting mac ${mac} vendor finished`);
+    return vendor;
   } catch (error) {
+    console.error(`[local-network-scan] Feting mac ${mac} vendor failed, ${error}`);
     return '';
   }
 }
@@ -89,7 +64,7 @@ async function getVendor(mac: string): Promise<string> {
  * @param options The scan option
  * @returns ResolvedDevice object, or undefined if there is no devices on current IP
  */
-async function pingDevice(ip: string, options: ScanOptions): Promise<NetworkDevice | undefined> {
+async function pingDevice(ip: string): Promise<NetworkDevice | undefined> {
   try {
     // First ping ip
     const pingResult = await ping.promise.probe(ip, { timeout: 0.5 });
@@ -97,22 +72,9 @@ async function pingDevice(ip: string, options: ScanOptions): Promise<NetworkDevi
       // If no device there, return undefined and abort
       return;
     }
-    // Get devices' mac
-    const rawMac = await getMac(ip);
-
-    let vendor;
-    if (options.queryVendor) {
-      // Get device's vendor, if required
-      vendor = await getVendor(rawMac);
-    }
-
-    // Convert mac from any convention (suc as '11:aa:22:bb:33:cc') to '11aa22bb33cc'
-    const mac = rawMac.replace(/:|-|_| /g, '').toLowerCase();
 
     return {
       ip,
-      mac,
-      vendor,
     };
   } catch (error) {
     // Do nothing in case of ping error, it's OK.
@@ -125,21 +87,94 @@ async function pingDevice(ip: string, options: ScanOptions): Promise<NetworkDevi
  * @returns The network devices collection
  */
 export async function scanLocalNetwork(options: ScanOptions = {}): Promise<NetworkDevice[]> {
+  if (options.clearVendorsCache) {
+    vendorsCache.clear();
+  }
+
+  options.queryVendor = true;
+  options.beachesSize = options.beachesSize || 50;
+  options.pingTimeoutMS = options.pingTimeoutMS || 1000 * 2.5;
+
   // First calc the network addresses
   options.localNetwork = getNetworkAddress(options.localNetwork);
 
-  // Generate all network IP's
-  const networkDeviceCandidate: string[] = [];
+  // Hold & run several ping request in batch, batch size based on ScanOptions.beachesSize
+  const pingBatches: { [key: number]: (() => Promise<NetworkDevice | undefined>)[] } = {};
+
+  let batch = 0;
   for (let index = 0; index < 255; index++) {
-    networkDeviceCandidate.push(`${options.localNetwork}.${index}`);
+    // If the batch is full (means )
+    if (index % options.beachesSize === 0) {
+      batch = index; // Keep the device index as bach key
+      pingBatches[batch] = [];
+    }
+    // Prepare the ping promise to ping device index X
+    const pingCall = async () => {
+      return await timeout(
+        pingDevice(`${options.localNetwork}.${index}`),
+        (options.pingTimeoutMS || 0) as number,
+      ).catch(() => undefined);
+    };
+    // Add ping call to the bach
+    pingBatches[batch].push(pingCall);
   }
 
-  // Query all devices in parallel, and wats for the results
-  const allResults = await Promise.all(
-    networkDeviceCandidate.map(deviceCandidate => pingDevice(deviceCandidate, options)),
+  const sampleStartPing = new Date();
+
+  const localDevicesResults: (NetworkDevice | undefined)[] = [];
+  console.debug(`[local-network-scan] Pinging the network devices..."`);
+  for (const [batch, pingCalls] of Object.entries(pingBatches)) {
+    console.debug(`[local-network-scan] Invoking ping batch "${batch}..."`);
+    const batchResults = await Promise.all(pingCalls.map(c => c().catch(() => undefined)));
+    console.debug(`[local-network-scan] Invoking ping batch "${batch} done"`);
+    localDevicesResults.push(...batchResults);
+  }
+  const localDevices: NetworkDevice[] = localDevicesResults.filter(d => !!d) as NetworkDevice[];
+
+  console.debug(`[local-network-scan] Pinging the network devices finished"`);
+  const sampleEndPing = new Date();
+
+  const sampleStartARP = new Date();
+  console.debug(`[local-network-scan] Reading ARP table..."`);
+  try {
+    const macTable = await getNetworkTableMap(options);
+    // Load up the mac results to the devices
+    for (const localDevice of localDevices) {
+      localDevice.mac = macTable.get(localDevice.ip);
+    }
+  } catch (error) {
+    console.error(error);
+  }
+
+  console.debug(`[local-network-scan] Reading ARP table finished"`);
+  const sampleEndARP = new Date();
+
+  const sampleStartVendor = new Date();
+  if (options.queryVendor) {
+    console.debug(`[local-network-scan] Fetching devices vendors ..."`);
+    const vendorQueries = [];
+    for (const localDevice of localDevices) {
+      if (!localDevice.mac) {
+        // If there is no mac address, skip vendor fetch
+        continue;
+      }
+
+      vendorQueries.push(async () => {
+        localDevice.vendor = await getVendor(localDevice.mac as string);
+      });
+    }
+    await Promise.all(vendorQueries.map(q => q().catch(() => undefined)));
+    console.debug(`[local-network-scan] Fetching devices vendors finished"`);
+  }
+  const sampleEndVendor = new Date();
+
+  const pingsDurationS = (sampleEndPing.getTime() - sampleStartPing.getTime()) / 1000;
+  const arpDurationS = (sampleEndARP.getTime() - sampleStartARP.getTime()) / 1000;
+  const vendorsDurationS = (sampleEndVendor.getTime() - sampleStartVendor.getTime()) / 1000;
+  const totalS = pingsDurationS + arpDurationS + vendorsDurationS;
+  console.debug(
+    `[local-network-scan] Scanning network devices finished with total ${localDevices.length} devices, pings took ${pingsDurationS}s, ARP read took ${arpDurationS}s, fetch vendors took ${vendorsDurationS}s, total ${totalS}s`,
   );
 
-  // Clean up all non used IP's (pingHost returns undefined in any case of failure)
-  const succeedResults = allResults.filter(r => !!r);
-  return succeedResults as NetworkDevice[];
+  return localDevices;
 }

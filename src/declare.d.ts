@@ -1,1 +1,1 @@
-declare module 'node-arp';
+declare module 'await-spawn';
