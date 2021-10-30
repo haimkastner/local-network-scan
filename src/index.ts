@@ -94,6 +94,7 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
   options.queryVendor = true;
   options.beachesSize = options.beachesSize || 50;
   options.pingTimeoutMS = options.pingTimeoutMS || 1000 * 2.5;
+  options.queryVendorsTimeoutMS = options.queryVendorsTimeoutMS || 1000 * 60;
 
   // First calc the network addresses
   options.localNetwork = getNetworkAddress(options.localNetwork);
@@ -163,7 +164,7 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
         localDevice.vendor = await getVendor(localDevice.mac as string);
       });
     }
-    await Promise.all(vendorQueries.map(q => q().catch(() => undefined)));
+    await timeout(Promise.all(vendorQueries.map(q => q().catch(() => undefined))), options.queryVendorsTimeoutMS);
     console.debug(`[local-network-scan] Fetching devices vendors finished"`);
   }
   const sampleEndVendor = new Date();

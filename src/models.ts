@@ -18,9 +18,11 @@ export interface ScanOptions {
   localNetwork?: string;
   /** Detect devices vendor from https://macvendors.com/ API (default false) */
   queryVendor?: boolean;
-  /** Ping timeout */
+  /** Ping timeout - default 1000 * 2.5 (2.5s)  */
   pingTimeoutMS?: number;
-  /** ping batch size */
+  /** Query vendors timeout - default 1000 * 60 (60s)  */
+  queryVendorsTimeoutMS?: number;
+  /** ping batch size - default 50 */
   beachesSize?: number;
   /** clean in-mem cache of vendor by mac address */
   clearVendorsCache?: boolean;
