@@ -1,4 +1,12 @@
 /**
+ * Simple logger object, to use it as the library logger
+ */
+export interface Logger {
+  info: (log: string) => void;
+  error: (log: string) => void;
+}
+
+/**
  * A device in the network
  */
 export interface NetworkDevice {
@@ -26,4 +34,6 @@ export interface ScanOptions {
   beachesSize?: number;
   /** clean in-mem cache of vendor by mac address */
   clearVendorsCache?: boolean;
+  /** Allow pass any logger to use it instead of default 'console' output */
+  logger?: Logger;
 }

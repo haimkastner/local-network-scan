@@ -1,6 +1,6 @@
 {
   "name": "local-network-scan",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "A lightweight library to quickly scan local network",
   "scripts": {
     "prepublish": "npm run format && npm run build",

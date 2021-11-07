@@ -3,7 +3,10 @@ import ip from 'ip';
 import ping from 'ping';
 import { timeout } from 'promise-timeout';
 import { getNetworkTableMap } from './arp';
-import { NetworkDevice, ScanOptions } from './models';
+import { Logger, NetworkDevice, ScanOptions } from './models';
+
+/** Rhe logger, default it's the Node.JS console */
+let logger: Logger = console;
 
 /** Keep mac vendors results in cache */
 const vendorsCache = new Map<string, string>();
@@ -42,18 +45,18 @@ function getNetworkAddress(localNetwork?: string): string {
 async function getVendor(mac: string): Promise<string> {
   try {
     if (vendorsCache.has(mac)) {
-      console.debug(`[local-network-scan] found mac ${mac} hit in cache`);
+      logger.info(`[local-network-scan] found mac ${mac} hit in cache`);
       return vendorsCache.get(mac) || '';
     }
-    console.debug(`[local-network-scan] Feting mac ${mac} vendor...`);
+    logger.info(`[local-network-scan] Feting mac ${mac} vendor...`);
     const vendorRes = await axios(`http://macvendors.co/api/${mac}/json`);
     const vendorBody = vendorRes.data as any;
     const vendor = vendorBody?.result?.company || '';
     vendorsCache.set(mac, vendor);
-    console.debug(`[local-network-scan] Feting mac ${mac} vendor finished`);
+    logger.info(`[local-network-scan] Feting mac ${mac} vendor finished`);
     return vendor;
   } catch (error) {
-    console.error(`[local-network-scan] Feting mac ${mac} vendor failed, ${error}`);
+    logger.error(`[local-network-scan] Feting mac ${mac} vendor failed, ${error}`);
     return '';
   }
 }
@@ -87,6 +90,11 @@ async function pingDevice(ip: string): Promise<NetworkDevice | undefined> {
  * @returns The network devices collection
  */
 export async function scanLocalNetwork(options: ScanOptions = {}): Promise<NetworkDevice[]> {
+  if (options.logger) {
+    // Load the logger, if it's passed
+    logger = options.logger;
+  }
+
   if (options.clearVendorsCache) {
     vendorsCache.clear();
   }
@@ -123,20 +131,20 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
   const sampleStartPing = new Date();
 
   const localDevicesResults: (NetworkDevice | undefined)[] = [];
-  console.debug(`[local-network-scan] Pinging the network devices..."`);
+  logger.info(`[local-network-scan] Pinging the network devices..."`);
   for (const [batch, pingCalls] of Object.entries(pingBatches)) {
-    console.debug(`[local-network-scan] Invoking ping batch "${batch}..."`);
+    logger.info(`[local-network-scan] Invoking ping batch "${batch}..."`);
     const batchResults = await Promise.all(pingCalls.map(c => c().catch(() => undefined)));
-    console.debug(`[local-network-scan] Invoking ping batch "${batch} done"`);
+    logger.info(`[local-network-scan] Invoking ping batch "${batch} done"`);
     localDevicesResults.push(...batchResults);
   }
   const localDevices: NetworkDevice[] = localDevicesResults.filter(d => !!d) as NetworkDevice[];
 
-  console.debug(`[local-network-scan] Pinging the network devices finished"`);
+  logger.info(`[local-network-scan] Pinging the network devices finished"`);
   const sampleEndPing = new Date();
 
   const sampleStartARP = new Date();
-  console.debug(`[local-network-scan] Reading ARP table..."`);
+  logger.info(`[local-network-scan] Reading ARP table..."`);
   try {
     const macTable = await getNetworkTableMap(options);
     // Load up the mac results to the devices
@@ -144,15 +152,15 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
       localDevice.mac = macTable.get(localDevice.ip);
     }
   } catch (error) {
-    console.error(error);
+    logger.error(`${JSON.stringify(error || '')}`);
   }
 
-  console.debug(`[local-network-scan] Reading ARP table finished"`);
+  logger.info(`[local-network-scan] Reading ARP table finished"`);
   const sampleEndARP = new Date();
 
   const sampleStartVendor = new Date();
   if (options.queryVendor) {
-    console.debug(`[local-network-scan] Fetching devices vendors ..."`);
+    logger.info(`[local-network-scan] Fetching devices vendors ..."`);
     const vendorQueries = [];
     for (const localDevice of localDevices) {
       if (!localDevice.mac) {
@@ -164,8 +172,13 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
         localDevice.vendor = await getVendor(localDevice.mac as string);
       });
     }
-    await timeout(Promise.all(vendorQueries.map(q => q().catch(() => undefined))), options.queryVendorsTimeoutMS);
-    console.debug(`[local-network-scan] Fetching devices vendors finished"`);
+    try {
+      await timeout(Promise.all(vendorQueries.map(q => q().catch(() => undefined))), options.queryVendorsTimeoutMS);
+    } catch (error) {
+      logger.error(`[local-network-scan] Fetching devices vendors timeout, avoiding vendors fetch"`);
+    }
+
+    logger.info(`[local-network-scan] Fetching devices vendors finished"`);
   }
   const sampleEndVendor = new Date();
 
@@ -173,7 +186,7 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
   const arpDurationS = (sampleEndARP.getTime() - sampleStartARP.getTime()) / 1000;
   const vendorsDurationS = (sampleEndVendor.getTime() - sampleStartVendor.getTime()) / 1000;
   const totalS = pingsDurationS + arpDurationS + vendorsDurationS;
-  console.debug(
+  logger.info(
     `[local-network-scan] Scanning network devices finished with total ${localDevices.length} devices, pings took ${pingsDurationS}s, ARP read took ${arpDurationS}s, fetch vendors took ${vendorsDurationS}s, total ${totalS}s`,
   );
 
