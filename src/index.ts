@@ -99,7 +99,7 @@ export async function scanLocalNetwork(options: ScanOptions = {}): Promise<Netwo
     vendorsCache.clear();
   }
 
-  options.queryVendor = true;
+  options.queryVendor = options.queryVendor || false;
   options.beachesSize = options.beachesSize || 50;
   options.pingTimeoutMS = options.pingTimeoutMS || 1000 * 2.5;
   options.queryVendorsTimeoutMS = options.queryVendorsTimeoutMS || 1000 * 60;
